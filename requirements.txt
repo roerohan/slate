@@ -1,0 +1,4 @@
+playwright>=1.40,<2
+Pillow>=10.0,<11
+numpy>=1.26,<3
+scikit-image>=0.22,<1
