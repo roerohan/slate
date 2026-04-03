@@ -16,11 +16,13 @@ slate/
     prepare-data.ts    # 3-phase data pipeline: collect -> render -> manifest
   rl/
     __init__.py
-    config.py          # Python-side config (viewport, reward weights, thresholds)
+    config.py          # Python-side config (viewport, reward weights, model, eval settings)
     reward.py          # Reward function: render HTML, compute visual similarity score
+    eval.py            # Baseline evaluation: VLM inference + reward scoring + artifacts
   data/                # Generated output (gitignored)
     manifest.json      # Array of {id, screenshot, html, reference_html} records
     screenshots/       # 1280x720 PNGs (0000.png, 0001.png, ...)
+    eval/              # Eval artifacts (generated screenshots, diffs, results.json)
   requirements.txt     # Python dependencies (playwright, Pillow, numpy, scikit-image)
   .env                 # Cloudflare + Tinker credentials (gitignored, never commit)
   .env.example         # Template for required env vars
@@ -87,9 +89,19 @@ Never commit `.env`. It is gitignored.
 
 ## Commands
 
+Before running any Python commands, activate the virtual environment if one is present:
+
+```bash
+source venv/bin/activate
+```
+
 | Command | Description |
 |---|---|
 | `npm run prepare-data` | Run the full data generation pipeline |
+| `python -m rl.eval` | Evaluate base VLM on Design2Code (50 examples by default) |
+| `python -m rl.eval --n 20` | Evaluate on 20 examples |
+| `python -m rl.eval --model-path tinker://...` | Evaluate a fine-tuned model checkpoint |
+| `python -m rl.eval --out data/eval_run2` | Custom output directory |
 
 ## Conventions
 
@@ -135,6 +147,34 @@ A blank page with no text or colour gets `gate=0.2`, crushing SSIM credit even i
 | `make_diff_image(ref_img, gen_img)` | Red-overlay diff image for debugging |
 
 **Browser lifecycle**: Callers manage the Playwright browser/page. The reward functions accept a `Page` object. This keeps the module flexible for both batch scoring and RL rollout loops.
+
+## Evaluation (`rl/eval.py`)
+
+Measures VLM performance on the Design2Code task. Validates the full pipeline end-to-end: Tinker inference, HTML extraction, reward scoring, artifact generation.
+
+**Pipeline**:
+
+1. **Load dataset** -- Selects N examples from `data/manifest.json` (shuffled with seed 42).
+2. **Build prompts** -- Each prompt contains a system instruction + the reference screenshot image, sent to the VLM via Tinker.
+3. **Sample HTML** -- Async concurrent requests to Tinker (default 8 parallel). The VLM generates HTML in a ```html code block.
+4. **Score with reward function** -- Renders both reference and generated HTML via Playwright, computes reward (SSIM + text + color).
+5. **Save artifacts** -- Per-example: generated screenshot (`NNNN_gen.png`), diff image (`NNNN_diff.png`), generated HTML (`NNNN_gen.html`). Aggregate: `results.json` with metrics + per-example breakdown.
+
+**Model**: `Qwen/Qwen3.5-4B` with `qwen3_5_disable_thinking` renderer (configurable in `rl/config.py`).
+
+**Key config** (all in `rl/config.py`):
+
+| Parameter | Value | Purpose |
+|---|---|---|
+| `MODEL_NAME` | `Qwen/Qwen3.5-4B` | Base VLM for inference |
+| `RENDERER_NAME` | `qwen3_5_disable_thinking` | Tinker renderer (no thinking tokens) |
+| `MAX_TOKENS` | 8192 | Max generated tokens |
+| `TEMPERATURE` | 0.7 | Sampling temperature |
+| `EVAL_SUBSET` | 50 | Default number of eval examples |
+| `EVAL_CONCURRENCY` | 8 | Max parallel Tinker requests |
+| `MAX_IMAGE_SIZE` | 480 | Longest side of screenshot sent to VLM |
+
+**Expected output** (base model): The reference project saw avg SSIM ~0.536, reward ~-0.677 for a base 4B model. Poor performance is expected and is exactly what RL training is meant to fix.
 
 ## Design Decisions and Constraints
 

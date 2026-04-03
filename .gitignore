@@ -6,3 +6,6 @@ dist/
 data/
 
 rl/__pycache__
+
+PLAN.md
+.opencode/plans

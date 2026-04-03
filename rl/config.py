@@ -40,3 +40,33 @@ COLOR_QUANT_STEP = 32
 # Used when wrapping HTML snippets into full documents for rendering.
 
 TAILWIND_CDN = "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+
+# ── Model / inference ────────────────────────────────────────────────────────
+# Used by eval.py and (later) train.py for Tinker VLM inference.
+
+MODEL_NAME = "Qwen/Qwen3.5-4B"
+RENDERER_NAME = "qwen3_5_disable_thinking"
+
+# ── Generation parameters ────────────────────────────────────────────────────
+
+MAX_TOKENS = 8192          # Upper bound on generated HTML tokens
+TEMPERATURE = 0.7          # Sampling temperature for generation
+TOP_P = 1.0
+TOP_K = -1                 # -1 = disabled
+
+# ── Eval settings ────────────────────────────────────────────────────────────
+
+EVAL_SUBSET = 50           # Number of examples to evaluate on
+EVAL_CONCURRENCY = 8       # Max parallel Tinker sampling requests
+MAX_IMAGE_SIZE = 480       # Longest side of screenshot sent to the VLM
+
+# ── System prompt ────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT = (
+    "You are an expert web developer. Given a screenshot of a webpage, "
+    "generate the HTML code that would produce this exact visual output. "
+    "Use Tailwind CSS classes for styling. "
+    "Output ONLY the HTML code inside a ```html code block. "
+    "Do not include <!DOCTYPE>, <html>, <head>, or <body> tags — "
+    "just the body content with inline <style> blocks if needed."
+)
