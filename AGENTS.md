@@ -19,10 +19,14 @@ slate/
     config.py          # Python-side config (viewport, reward weights, model, eval settings)
     reward.py          # Reward function: render HTML, compute visual similarity score
     eval.py            # Baseline evaluation: VLM inference + reward scoring + artifacts
+    training/
+      __init__.py
+      single_shot.py   # Single-shot GRPO training: screenshot -> HTML, one attempt
   data/                # Generated output (gitignored)
     manifest.json      # Array of {id, screenshot, html, reference_html} records
     screenshots/       # 1280x720 PNGs (0000.png, 0001.png, ...)
     eval/              # Eval artifacts (generated screenshots, diffs, results.json)
+    training/          # Training logs, metrics, and checkpoints
   requirements.txt     # Python dependencies (playwright, Pillow, numpy, scikit-image)
   .env                 # Cloudflare + Tinker credentials (gitignored, never commit)
   .env.example         # Template for required env vars
@@ -102,6 +106,10 @@ source venv/bin/activate
 | `python -m rl.eval --n 20` | Evaluate on 20 examples |
 | `python -m rl.eval --model-path tinker://...` | Evaluate a fine-tuned model checkpoint |
 | `python -m rl.eval --out data/eval_run2` | Custom output directory |
+| `python -m rl.training.single_shot` | Run single-shot GRPO training (20 batches default) |
+| `python -m rl.training.single_shot --batches 10` | Train for 10 batches |
+| `python -m rl.training.single_shot --resume` | Resume from last checkpoint |
+| `python -m rl.training.single_shot --log-path data/training/run2` | Custom log directory |
 
 ## Conventions
 
@@ -175,6 +183,35 @@ Measures VLM performance on the Design2Code task. Validates the full pipeline en
 | `MAX_IMAGE_SIZE` | 480 | Longest side of screenshot sent to VLM |
 
 **Expected output** (base model): The reference project saw avg SSIM ~0.536, reward ~-0.677 for a base 4B model. Poor performance is expected and is exactly what RL training is meant to fix.
+
+## Single-Shot GRPO Training (`rl/training/single_shot.py`)
+
+Trains the VLM to improve at screenshot-to-HTML using Group Relative Policy Optimization (GRPO). "Single-shot" means one screenshot in, one HTML out -- no multi-turn correction loop.
+
+**Per-batch loop**:
+
+1. **Select examples** -- Pick `BATCH_SIZE` (4) screenshots from the shuffled dataset.
+2. **Sample completions** -- For each screenshot, sample `GROUP_SIZE` (4) HTML completions from the current policy via Tinker.
+3. **Score** -- Render each completion in Playwright, compute reward using the reward function.
+4. **GRPO advantages** -- For each group, `advantage_i = reward_i - mean(rewards)`. This is the RL signal: completions better than the group average get positive advantage, worse ones get negative.
+5. **Build datums** -- Construct Tinker training datums with prompt tokens, response tokens, sampling logprobs, and per-token advantages. Groups where all rewards are identical are skipped (zero gradient).
+6. **Gradient step** -- `importance_sampling` loss (GRPO-style) + AdamW optimizer via Tinker's LoRA training API.
+7. **Checkpoint** -- Save weights every `SAVE_EVERY` (5) batches. Final checkpoint saves both state (for resume) and sampler weights (for inference/eval).
+
+**Key config** (all in `rl/config.py`):
+
+| Parameter | Value | Purpose |
+|---|---|---|
+| `LEARNING_RATE` | 4e-5 | AdamW learning rate |
+| `LORA_RANK` | 32 | LoRA adapter rank |
+| `GROUP_SIZE` | 4 | Completions per prompt (for GRPO variance reduction) |
+| `BATCH_SIZE` | 4 | Prompts per training batch |
+| `TRAIN_TEMPERATURE` | 1.0 | Sampling temperature (higher than eval for exploration) |
+| `SAVE_EVERY` | 5 | Checkpoint every N batches |
+
+**Resuming**: Use `--resume` to continue from the last checkpoint in the log directory. Loads both weights and optimizer state.
+
+**After training**: Run `python -m rl.eval --model-path tinker://...` with the checkpoint path from the final save to measure improvement.
 
 ## Design Decisions and Constraints
 

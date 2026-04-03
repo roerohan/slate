@@ -70,3 +70,13 @@ SYSTEM_PROMPT = (
     "Do not include <!DOCTYPE>, <html>, <head>, or <body> tags — "
     "just the body content with inline <style> blocks if needed."
 )
+
+# ── Training settings ────────────────────────────────────────────────────────
+
+LEARNING_RATE = 4e-5       # AdamW learning rate
+LORA_RANK = 32             # LoRA adapter rank (higher = more capacity, more VRAM)
+GROUP_SIZE = 4             # GRPO: number of completions per prompt
+BATCH_SIZE = 4             # Prompts per training batch (total datums = BATCH_SIZE * GROUP_SIZE)
+TRAIN_TEMPERATURE = 1.0    # Higher than eval to encourage exploration during RL
+SAVE_EVERY = 5             # Save checkpoint every N batches (0 = disabled)
+LOG_PATH = "data/training" # Directory for training logs and checkpoints
