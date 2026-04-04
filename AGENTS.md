@@ -22,6 +22,7 @@ slate/
     training/
       __init__.py
       single_shot.py   # Single-shot GRPO training: screenshot -> HTML, one attempt
+      multi_turn.py    # Multi-turn GRPO training: generate -> diff feedback -> correct
   data/                # Generated output (gitignored)
     manifest.json      # Array of {id, screenshot, html, reference_html} records
     screenshots/       # 1280x720 PNGs (0000.png, 0001.png, ...)
@@ -110,6 +111,9 @@ source venv/bin/activate
 | `python -m rl.training.single_shot --batches 10` | Train for 10 batches |
 | `python -m rl.training.single_shot --resume` | Resume from last checkpoint |
 | `python -m rl.training.single_shot --log-path data/training/run2` | Custom log directory |
+| `python -m rl.training.multi_turn` | Run multi-turn GRPO training (20 batches, 3 turns) |
+| `python -m rl.training.multi_turn --turns 2` | Limit to 2 turns per episode |
+| `python -m rl.training.multi_turn --resume` | Resume from last checkpoint |
 
 ## Conventions
 
@@ -212,6 +216,36 @@ Trains the VLM to improve at screenshot-to-HTML using Group Relative Policy Opti
 **Resuming**: Use `--resume` to continue from the last checkpoint in the log directory. Loads both weights and optimizer state.
 
 **After training**: Run `python -m rl.eval --model-path tinker://...` with the checkpoint path from the final save to measure improvement.
+
+## Multi-Turn GRPO Training (`rl/training/multi_turn.py`)
+
+Extends single-shot training with a self-correction loop. Instead of one attempt per screenshot, the model gets multiple turns:
+
+1. **Turn 1**: See screenshot, generate HTML
+2. **Turn 2**: See diff image (red overlay showing pixel differences), fix HTML
+3. **Turn 3**: See updated diff, fix again
+
+**Episode flow** (per group member):
+
+1. Build initial prompt (system + screenshot + task)
+2. Sample HTML from the model
+3. Render the HTML, score it, produce a diff image vs the reference
+4. If not the last turn: append the model's response + diff image + feedback prompt to the conversation
+5. Sample corrected HTML from the model (it sees the full conversation history)
+6. Repeat until MAX_TURNS or scoring fails
+
+**GRPO advantage**: Computed from the **final turn's reward** only. All turns in the episode share the same advantage. This incentivises the model to produce the best possible output by the end, regardless of how many correction rounds it took.
+
+**Datum structure**: Each turn produces a **separate Datum** because the `qwen3_5_disable_thinking` renderer strips thinking tokens from conversation history, breaking the prefix-extension property. Turn 2's tokenized prompt is re-tokenized from scratch, not appended to turn 1's tokens.
+
+**Key config** (in `rl/config.py`):
+
+| Parameter | Value | Purpose |
+|---|---|---|
+| `MAX_TURNS` | 3 | Max conversation turns per episode |
+| `FEEDBACK_PROMPT` | "Your HTML does not match..." | User message sent with each diff image |
+
+**vs single-shot**: Multi-turn produces more datums per example (one per turn per group member) and takes longer per batch due to sequential turns, but teaches the model to self-correct based on visual feedback.
 
 ## Design Decisions and Constraints
 

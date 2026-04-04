@@ -80,3 +80,15 @@ BATCH_SIZE = 4             # Prompts per training batch (total datums = BATCH_SI
 TRAIN_TEMPERATURE = 1.0    # Higher than eval to encourage exploration during RL
 SAVE_EVERY = 5             # Save checkpoint every N batches (0 = disabled)
 LOG_PATH = "data/training" # Directory for training logs and checkpoints
+
+# ── Multi-turn training settings ─────────────────────────────────────────────
+
+MAX_TURNS = 3              # Max conversation turns (initial attempt + correction rounds)
+MULTI_TURN_LOG_PATH = "data/training_multi_turn"
+
+FEEDBACK_PROMPT = (
+    "Your HTML does not match the target screenshot. "
+    "Here is a diff image highlighting the differences in red. "
+    "Please fix your HTML to better match the original screenshot. "
+    "Output ONLY the corrected HTML inside a ```html code block."
+)
