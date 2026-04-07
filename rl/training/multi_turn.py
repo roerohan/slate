@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import io
 import json
 import logging
@@ -95,6 +96,19 @@ log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MANIFEST_PATH = ROOT / "data" / "manifest.json"
+
+
+# ── Checkpoint helper ────────────────────────────────────────────────────────
+# Playwright's sync API runs an asyncio event loop in a background thread.
+# The sync wrapper checkpoint_utils.save_checkpoint() calls asyncio.run()
+# which fails with "cannot be called from a running event loop".
+# We call save_checkpoint_async() directly on the existing loop instead.
+
+
+def _save_checkpoint(**kwargs) -> dict[str, str]:
+    """Call save_checkpoint_async on the running event loop."""
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(checkpoint_utils.save_checkpoint_async(**kwargs))
 
 
 # ── Dataset ──────────────────────────────────────────────────────────────────
@@ -442,7 +456,7 @@ def train(
                 and (batch_idx - start_batch) % SAVE_EVERY == 0
             ):
                 log.info("Saving checkpoint at batch %d...", batch_idx)
-                checkpoint_utils.save_checkpoint(
+                _save_checkpoint(
                     training_client=training_client,
                     name=f"{batch_idx:06d}",
                     log_path=str(log_path_obj),
@@ -568,7 +582,7 @@ def train(
         # ── Final checkpoint ─────────────────────────────────────────
         final_batch = start_batch + n_batches
         log.info("Saving final checkpoint...")
-        checkpoint_utils.save_checkpoint(
+        _save_checkpoint(
             training_client=training_client,
             name="final",
             log_path=str(log_path_obj),
